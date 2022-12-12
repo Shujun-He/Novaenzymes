@@ -14,7 +14,7 @@ from scipy.stats import spearmanr
 from pprint import pprint
 
 import plotly.express as px
-import torch as th
+import torch.nn as nn
 import pandas as pd
 from scipy.stats import rankdata
 import json
@@ -27,13 +27,16 @@ from torch.optim import AdamW
 
 from Logger import CSVLogger
 
+from Network import ThermoNet2
+
+
 MULTIPROCESSING = False
 BOXSIZE = 16
 VOXELSIZE = 1
 N_FOLDS = 10
 MODELS_PATH = 'models'
 DEBUG = True
-DEVICE = 'cuda' if th.cuda.is_available() else 'cpu'
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 DESTABILIZING_MUTATIONS_ONLY = True
 AUGMENT_DESTABILIZING_MUTATIONS = False
 EARLY_STOPPING_PATIENCE = 30
@@ -137,6 +140,7 @@ os.makedirs(MODELS_PATH, exist_ok=True)
 def load_data():
     print("1. Loading csv datasets")
     df = pd.read_csv(f'{TRAIN_FEATURES_DIR}/dataset.csv')
+
     print(df.shape)
     df.source = df.source.apply(eval)
     print(f'Total unique mutations: {len(df)}')
@@ -239,69 +243,13 @@ plot_voxels()
 # In[106]:
 
 
-class ThermoNet2(th.nn.Module):
-    def __init__(self, params):
-        super().__init__()
 
-        CONV_LAYER_SIZES = [14, 16, 24, 32, 48, 78, 128]
-        FLATTEN_SIZES = [0, 5488, 5184, 4000, 3072, 2106, 1024]
-
-        dropout_rate = params['dropout_rate']
-        dropout_rate_dt = params['dropout_rate_dt']
-        dense_layer_size = int(params['dense_layer_size'])
-        layer_num = int(params['conv_layer_num'])
-        silu = params['SiLU']
-
-        self.params = params
-        if silu:
-            activation = th.nn.SiLU()
-        else:
-            activation = th.nn.ReLU()
-
-        model = [
-            th.nn.Sequential(
-                *[th.nn.Sequential(
-                    th.nn.Conv3d(in_channels=CONV_LAYER_SIZES[l], out_channels=CONV_LAYER_SIZES[l + 1], kernel_size=(3, 3, 3)),
-                    activation
-                ) for l in range(layer_num)]
-            ),
-            th.nn.MaxPool3d(kernel_size=(2,2,2)),
-            th.nn.Flatten(),
-        ]
-        flatten_size = FLATTEN_SIZES[layer_num]
-        if self.params['LayerNorm']:
-            model.append(th.nn.LayerNorm(flatten_size))
-        self.model = th.nn.Sequential(*model)
-
-        self.ddG = th.nn.Sequential(
-            th.nn.Dropout(p=dropout_rate),
-            th.nn.Linear(in_features=flatten_size, out_features=dense_layer_size),
-            activation,
-            th.nn.Dropout(p=dropout_rate),
-            th.nn.Linear(in_features=dense_layer_size, out_features=1)
-        )
-        self.dT = th.nn.Sequential(
-            th.nn.Dropout(p=dropout_rate_dt),
-            th.nn.Linear(in_features=flatten_size, out_features=dense_layer_size),
-            activation,
-            th.nn.Dropout(p=dropout_rate_dt),
-            th.nn.Linear(in_features=dense_layer_size, out_features=1)
-        )
-
-
-    def forward(self, x):
-        if self.params['diff_features']:
-            x[:, 7:, ...] -= x[:, :7, ...]
-        x = self.model(x)
-        ddg = self.ddG(x)
-        dt = self.dT(x)
-        return ddg.squeeze(), dt.squeeze()
 
 if DEBUG:
     params = copy.copy(BEST_PARAMS)
     params['diff_features'] = False
     tn2 =ThermoNet2(params)
-    print([out.shape for out in tn2.forward(th.randn((2, 14, 16, 16, 16)))])
+    print([out.shape for out in tn2.forward(torch.randn((2, 14, 16, 16, 16)))])
     print(tn2)
 
 
@@ -319,11 +267,11 @@ class ThermoNet2Dataset(Dataset):
         if self.df is not None:
             r = self.df.iloc[item]
             if 'ddG' in self.df.columns:
-                return th.as_tensor(r.features, dtype=th.float), th.tensor(r.ddG, dtype=th.float), th.tensor(r.dT, dtype=th.float)
+                return torch.as_tensor(r.features, dtype=torch.float), torch.tensor(r.ddG, dtype=torch.float), torch.tensor(r.dT, dtype=torch.float)
             else:
-                return th.as_tensor(r.features, dtype=th.float)
+                return torch.as_tensor(r.features, dtype=torch.float)
         else:
-            return th.as_tensor(self.features[item], dtype=th.float)
+            return torch.as_tensor(self.features[item], dtype=torch.float)
 
     def __len__(self):
         return len(self.df) if self.df is not None else len(self.features)
@@ -346,28 +294,28 @@ df_train.head()
 
 
 def evaluate(model, dl_val, params):
-    criterion = th.nn.MSELoss()
+    criterion = nn.MSELoss()
     model.eval()
     losses = []
     ddg_preds = []
     dt_preds = []
     ddg_losses = []
     dt_losses = []
-    with th.no_grad():
+    with torch.no_grad():
         for x, ddg, dt in tqdm(dl_val, desc='Eval', disable=True):
             ddg_pred, dt_pred = model(x.to(DEVICE))
             ddg_preds.append(ddg_pred.cpu().numpy())
             dt_preds.append(dt_pred.cpu().numpy())
             ddg = ddg.to(DEVICE)
             dt = dt.to(DEVICE)
-            not_nan_ddg = ~th.isnan(ddg)
+            not_nan_ddg = ~torch.isnan(ddg)
             ddg_loss = criterion(ddg[not_nan_ddg], ddg_pred[not_nan_ddg])
 
-            not_nan_dt = ~th.isnan(dt)
+            not_nan_dt = ~torch.isnan(dt)
             dt_loss = criterion(dt[not_nan_dt], dt_pred[not_nan_dt])
 
-            loss = th.stack([ddg_loss, dt_loss * params['C_dt_loss']])
-            loss = loss[~th.isnan(loss)].sum()
+            loss = torch.stack([ddg_loss, dt_loss * params['C_dt_loss']])
+            loss = loss[~torch.isnan(loss)].sum()
             if not np.isnan(loss.item()):
                 losses.append(loss.item())
             if not np.isnan(ddg_loss.item()):
@@ -380,7 +328,7 @@ def evaluate(model, dl_val, params):
 
 def load_pytorch_model(fname, params=BEST_PARAMS):
     model = ThermoNet2(params)
-    model.load_state_dict(th.load(fname))
+    model.load_state_dict(torch.load(fname))
     return model
 
 
@@ -403,7 +351,7 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
                                                     weight_decay=params['AdamW_decay'])
         optim = AdamW(optimizer_parameters, lr=params['learning_rate'])
     else:
-        optim = th.optim.Adam(model.parameters(), lr=params['learning_rate'])
+        optim = torch.optim.Adam(model.parameters(), lr=params['learning_rate'])
 
     scheduler = None
     if params['OneCycleLR']:
@@ -411,7 +359,7 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
         scheduler = OneCycleLR(optim, max_lr=params['learning_rate'],
                                                      steps_per_epoch=len(dl_train), epochs=params['epochs'],
                                                      pct_start=0.)
-    criterion = th.nn.MSELoss()
+    criterion = nn.MSELoss()
     best_model = None
     min_epoch = -1
     val_losses = defaultdict(lambda: [])
@@ -432,12 +380,12 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
                 ddg = ddg.to(DEVICE)
                 dt = dt.to(DEVICE)
                 loss = None
-                any_ddg = ~th.isnan(ddg)
-                if th.any(any_ddg):
+                any_ddg = ~torch.isnan(ddg)
+                if torch.any(any_ddg):
                     loss = criterion(ddg[any_ddg], ddg_pred[any_ddg])
                 #print(loss)
-                any_dt = ~th.isnan(dt)
-                if th.any(any_dt):
+                any_dt = ~torch.isnan(dt)
+                if torch.any(any_dt):
                     dt_loss = criterion(dt[any_dt], dt_pred[any_dt])
                     if loss is None:
                         loss = dt_loss * params['C_dt_loss']
@@ -473,7 +421,7 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
     if run is not None:
         #art = wandb.Artifact("thermonet2", type="model")
         fname = f'{MODELS_PATH}/{name}.pt'
-        th.save(model.state_dict(), fname)
+        torch.save(model.state_dict(), fname)
         art.add_file(fname)
         run.log_artifact(art)
         run.finish()
@@ -737,7 +685,7 @@ if SUBMISSION:
 
 
 def predict(model:ThermoNet2, test_features):
-    with th.no_grad():
+    with torch.no_grad():
         model.eval()
         dl = DataLoader(ThermoNet2Dataset(features=test_features), batch_size=64)
         if IS_DDG_TARGET:
