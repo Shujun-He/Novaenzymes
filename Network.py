@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch
 
 class ThermoNet2(nn.Module):
     def __init__(self, params):
@@ -57,3 +58,97 @@ class ThermoNet2(nn.Module):
         ddg = self.ddG(x)
         dt = self.dT(x)
         return ddg.squeeze(), dt.squeeze()
+
+from e3nn.nn.models.gate_points_2101 import Network
+from e3nn import o3
+
+
+
+class e3nnNetwork(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        model_kwargs = {
+            "irreps_in": "5x 0e",
+            "irreps_hidden": [(mul, (l, p)) for l, mul in enumerate([10,3,2,1]) for p in [-1, 1]],
+            "irreps_out": "2x0e",
+            "irreps_node_attr": None,
+            "irreps_edge_attr": o3.Irreps.spherical_harmonics(3),
+            "layers": 3,
+            "max_radius": 10,
+            "number_of_basis": 10,
+            "radial_layers": 1,
+            "radial_neurons": 128,
+            "num_neighbors": 12.2298,
+            "num_nodes": 24,
+            "reduce_output": False,
+        }
+
+        self.model = Network(**model_kwargs)
+
+
+    # def forward(self,input):
+    #     wt_input={"pos":input['wt_pos'],
+    #               "x":input['wt_x'],
+    #               'batch':input['wt_batch']}
+    #     wt=self.model(wt_input)
+    #
+    #     mt_input={"pos":input['mt_pos'],
+    #               "x":input['mt_x'],
+    #               'batch':input['mt_batch']}
+    #     mt=self.model(mt_input)
+    #
+    #     max_index=int(wt_input['batch'].max().item())
+    #
+    #     output=[]
+    #
+    #     for batch_index in range(max_index+1):
+    #
+    #         wt_sample=wt[wt_input['batch']==batch_index].mean(0)
+    #         mt_sample=mt[mt_input['batch']==batch_index].mean(0)
+    #         # dt_output.append(mt_sample[0]-wt_sample[0])
+    #         # ddg_output.append(mt_sample[1]-wt_sample[1])
+    #         output.append(mt_sample-wt_sample)
+    #
+    #     output=torch.stack(output,0)
+    #
+    #     #print(output.shape)
+    #
+    #     dt_output=output[:,0]
+    #     ddg_output=output[:,1]
+    #
+    #     # print(dt_output.shape)
+    #     # print(ddg_output.shape)
+    #     # exit()
+    #
+    #     return dt_output.float(), ddg_output.float()
+
+    def forward(self,input):
+        input={"pos":torch.cat([input['wt_pos'],input['mt_pos']],0),
+                "x":torch.cat([input['wt_x'],input['mt_x']],0),
+                'batch':torch.cat([input['wt_batch'],input['mt_batch']],0).long()}
+
+        # print(input['pos'].shape)
+        # print(input['x'].shape)
+        # print(input['batch'].shape)
+        # exit()
+        y=self.model(input)
+        max_index=int(input['batch'].max().item())
+
+        output=[]
+        for batch_index in range(max_index+1):
+            sample=y[input['batch']==batch_index].mean(0)
+            output.append(sample)
+
+        output=torch.stack(output,0)
+
+        #print(output.shape)
+
+        dt_output=output[:,0]
+        ddg_output=output[:,1]
+
+        # print(dt_output.shape)
+        # print(ddg_output.shape)
+        # exit()
+
+        return dt_output.float(), ddg_output.float()

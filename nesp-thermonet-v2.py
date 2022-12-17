@@ -27,8 +27,8 @@ from torch.optim import AdamW
 
 from Logger import CSVLogger
 
-from Network import ThermoNet2
-
+from Network import *
+from Dataset import *
 
 MULTIPROCESSING = False
 BOXSIZE = 16
@@ -75,10 +75,10 @@ DEFAULT_PARAMS = {
 BEST_PARAMS = {**DEFAULT_PARAMS, **{'AdamW': True,
  'C_dt_loss': 0.01,
  'OneCycleLR': False,
- 'batch_size': 256,
+ 'batch_size': 16,
  'AdamW_decay': 1.3994535042337082,
  'dropout_rate': 0.06297340526648805,
- 'learning_rate': 0.00020503764745082723,
+ 'learning_rate': 1e-2,
  'conv_layer_num': 5,
  'dropout_rate_dt': 0.3153179929570238,
  'dense_layer_size': 74.1731281147114}}
@@ -106,6 +106,9 @@ PUBLIC_SUBMISSIONS=[
 TRAIN_FEATURES_DIR = '../input/14656-unique-mutations-voxel-features-pdbs/features'
 
 
+test=np.load(TEST_FEATURES_PATH)
+
+exit()
 # except Exception as ex:
 #     print('Running locally')
 #     WILDTYPE_PDB = 'nesp/thermonet/wildtypeA.pdb'
@@ -180,69 +183,8 @@ def load_data():
     return df_train
 
 df_train = load_data()
+#df_train = pd.read_csv(f'{TRAIN_FEATURES_DIR}/dataset.csv')
 df_train
-
-
-# In[101]:
-
-
-df_train.dT.plot.hist(title='Distribution of dT')
-
-
-# In[102]:
-
-
-df_train.ddG.plot.hist(title='Distribution of ddG')
-
-
-# In[103]:
-
-
-df_train.plot.scatter(x='ddG', y='dT', title='ddG vs dT')
-
-
-# In[104]:
-
-
-df_train.groupby('sequence').features.count().plot.hist(title='Mutations per sequence', bins=50)
-
-
-# # Plotting voxel representation of features
-#
-# In the following plots we use 3D scatterplot to demonstrate training samples.
-# Specifically we plot `occupancy` feature that represents probability that certain voxel is occpupied by an atom.
-# Recall that each training/test sample uses a combination of wildetype+mutant features. So we use the following color-coding:
-# * blue color represents voxels that are occupied in both wildtype and mutant structures
-# * red color represents voxels that are occupied only in the mutant structure
-# * green color represents voxels that are occupied only in the wildtype structure
-
-# In[105]:
-
-
-from plotly.offline import init_notebook_mode
-init_notebook_mode(connected=True)
-
-def plot_voxels():
-    for i in [123, 124, 125, 126]:
-        df = pd.DataFrame([(x, y1, z) for x in range(16) for y1 in range(16) for z in range(16)], columns=['x', 'y', 'z'])
-        df['occupancy1'] = df_train.iloc[i].features[6, :, :, :].flatten() > 0.9
-        df['occupancy2'] = df_train.iloc[i].features[13, :, :, :].flatten() > 0.9
-        df.loc[df.occupancy1 | df.occupancy2, 'color'] = 'blue'
-        df.loc[~df.occupancy1 & df.occupancy2, 'color'] = 'red'
-        df.loc[df.occupancy1 & ~df.occupancy2, 'color'] = 'green'
-        ddg = df_train.ddG[i]
-        fig = px.scatter_3d(df.dropna(), x='x', y='y', z='z', color='color', title=f"Train idx:{i}; ddg={ddg}")
-        fig.show()
-
-
-plot_voxels()
-
-
-# # Model
-
-# In[106]:
-
-
 
 
 if DEBUG:
@@ -258,28 +200,99 @@ if DEBUG:
 # In[107]:
 
 
+#exit()
+
 class ThermoNet2Dataset(Dataset):
-    def __init__(self, df=None, features=None):
+    def __init__(self, df=df_train, features=None):
         self.df = df
         self.features = features
 
     def __getitem__(self, item):
-        if self.df is not None:
-            r = self.df.iloc[item]
-            if 'ddG' in self.df.columns:
-                return torch.as_tensor(r.features, dtype=torch.float), torch.tensor(r.ddG, dtype=torch.float), torch.tensor(r.dT, dtype=torch.float)
-            else:
-                return torch.as_tensor(r.features, dtype=torch.float)
-        else:
-            return torch.as_tensor(self.features[item], dtype=torch.float)
+        #if self.df is not None:
+        r = self.df.iloc[item]
+        # if 'ddG' in self.df.columns:
+        #     return torch.as_tensor(r.features, dtype=torch.float), torch.tensor(r.ddG, dtype=torch.float), torch.tensor(r.dT, dtype=torch.float)
+        # else:
+        #     return torch.as_tensor(r.features, dtype=torch.float)
+        pdb_name=r['PDB_chain']
+        wildtype=r['wildtype']
+        position=r['seq_position']
+        mutant=r['mutant']
+
+
+        wt_pdf=f'../input/14656-unique-mutations-voxel-features-pdbs/pdbs/{pdb_name}/{pdb_name}_relaxed.pdb'
+        wt = PandasPdb().read_pdb(wt_pdf)
+        wt = wt.df['ATOM'][wt.df['ATOM']['element_symbol']!='H']
+
+        mt_pdf=f'../input/14656-unique-mutations-voxel-features-pdbs/pdbs/{pdb_name}/{pdb_name}_{wildtype}{position}{mutant}_relaxed.pdb'
+        mt = PandasPdb().read_pdb(mt_pdf)
+        mt = mt.df['ATOM'][mt.df['ATOM']['element_symbol']!='H']
+
+        print(mt['element_symbol'].unique())
+        exit()
+        #else:
+            #return torch.as_tensor(self.features[item], dtype=torch.float)
 
     def __len__(self):
-        return len(self.df) if self.df is not None else len(self.features)
+        return len(self.df) #if self.df is not None else len(self.features)
 
-if DEBUG:
-    ds = ThermoNet2Dataset(df_train)
-    feat, t1, t2 = next(iter(DataLoader(ds, batch_size=BEST_PARAMS['batch_size'])))
-    print(feat.shape, t1.shape, t2.shape)
+
+
+#if DEBUG:
+ds = e3nnDataset(df_train)
+dl = DataLoader(ds, batch_size=BEST_PARAMS['batch_size'],collate_fn=GraphCollate(),num_workers=32)
+#feat, t1, t2 = next(iter(DataLoader(ds, batch_size=BEST_PARAMS['batch_size'])))
+#print(feat.shape, t1.shape, t2.shape)
+#print(ds[0])
+
+# for i in tqdm(range(len(ds))):
+#     data=ds[i]
+# model_kwargs = {
+#     "irreps_in": "4x 0e",
+#     "irreps_hidden": [(mul, (l, p)) for l, mul in enumerate([10,3,2,1]) for p in [-1, 1]],
+#     "irreps_out": "12x0e + 5x1o + 4x2e + 2x3o + 1x4e",
+#     "irreps_node_attr": None,
+#     "irreps_edge_attr": o3.Irreps.spherical_harmonics(3),
+#     "layers": 3,
+#     "max_radius": 10,
+#     "number_of_basis": 10,
+#     "radial_layers": 1,
+#     "radial_neurons": 128,
+#     "num_neighbors": 12.2298,
+#     "num_nodes": 24,
+#     "reduce_output": False,
+# }
+
+# model_kwargs = {
+#     "irreps_in": "4x 0e",
+#     "irreps_hidden": [(mul, (l, p)) for l, mul in enumerate([10,3,2,1]) for p in [-1, 1]],
+#     "irreps_out": "2x0e",
+#     "irreps_node_attr": None,
+#     "irreps_edge_attr": o3.Irreps.spherical_harmonics(3),
+#     "layers": 3,
+#     "max_radius": 10,
+#     "number_of_basis": 10,
+#     "radial_layers": 1,
+#     "radial_neurons": 128,
+#     "num_neighbors": 12.2298,
+#     "num_nodes": 24,
+#     "reduce_output": False,
+# }
+#
+# model = Network(**model_kwargs).double()
+# for batch in tqdm(dl):
+#     wt_input={"pos":batch['wt_pos'].double(),
+#               "x":batch['wt_x'].double(),
+#               'batch':batch['wt_batch'].long()}
+#     y=model(wt_input)
+#     print(y.shape)
+#     exit()
+    #pass
+    # for key in batch:
+    #     print(batch[key].shape)
+    # exit()
+#
+# exit()
 
 
 # In[108]:
@@ -302,8 +315,13 @@ def evaluate(model, dl_val, params):
     ddg_losses = []
     dt_losses = []
     with torch.no_grad():
-        for x, ddg, dt in tqdm(dl_val, desc='Eval', disable=True):
-            ddg_pred, dt_pred = model(x.to(DEVICE))
+        for batch in tqdm(dl_val, desc='Eval', disable=True):
+
+            for key in batch:
+                batch[key]=batch[key].to(DEVICE)
+
+            ddg, dt = batch['ddg'], batch['ddt']
+            ddg_pred, dt_pred = model(batch)
             ddg_preds.append(ddg_pred.cpu().numpy())
             dt_preds.append(dt_pred.cpu().numpy())
             ddg = ddg.to(DEVICE)
@@ -333,25 +351,26 @@ def load_pytorch_model(fname, params=BEST_PARAMS):
 
 
 def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, project='thermonetv2'):
-    model = ThermoNet2(params).to(DEVICE)
+    #model = ThermoNet2(params).to(DEVICE)
 
-    if params['AdamW']:
-        def get_optimizer_params(model, encoder_lr, weight_decay=0.0):
-            no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
-            optimizer_parameters = [
-                {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-                 'lr': encoder_lr, 'weight_decay': weight_decay},
-                {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
-                 'lr': encoder_lr, 'weight_decay': 0.0},
-            ]
-            return optimizer_parameters
-
-        optimizer_parameters = get_optimizer_params(model,
-                                                    encoder_lr=params['learning_rate'],
-                                                    weight_decay=params['AdamW_decay'])
-        optim = AdamW(optimizer_parameters, lr=params['learning_rate'])
-    else:
-        optim = torch.optim.Adam(model.parameters(), lr=params['learning_rate'])
+    model = e3nnNetwork().to(DEVICE).double()
+    # if params['AdamW']:
+    #     def get_optimizer_params(model, encoder_lr, weight_decay=0.0):
+    #         no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
+    #         optimizer_parameters = [
+    #             {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+    #              'lr': encoder_lr, 'weight_decay': weight_decay},
+    #             {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+    #              'lr': encoder_lr, 'weight_decay': 0.0},
+    #         ]
+    #         return optimizer_parameters
+    #
+    #     optimizer_parameters = get_optimizer_params(model,
+    #                                                 encoder_lr=params['learning_rate'],
+    #                                                 weight_decay=params['AdamW_decay'])
+    #     optim = AdamW(optimizer_parameters, lr=params['learning_rate'])
+    # else:
+    optim = torch.optim.Adam(model.parameters(), lr=params['learning_rate'])
 
     scheduler = None
     if params['OneCycleLR']:
@@ -374,9 +393,21 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
             model.train()
             #print(len(dl_train))
             train_loss=[]
-            for x, ddg, dt in tqdm(dl_train, desc='Train', disable=True):
+            #for x, ddg, dt in tqdm(dl_train, desc='Train', disable=True):
+            for batch in tqdm(dl_train, desc='Train', disable=False):
 
-                ddg_pred, dt_pred = model(x.to(DEVICE))
+                # for key in batch:
+                #     print(batch[key].shape)
+                # exit()
+
+                for key in batch:
+                    batch[key]=batch[key].to(DEVICE)
+
+                ddg, dt = batch['ddg'], batch['ddt']
+
+                ddg_pred, dt_pred=model(batch)
+
+                #ddg_pred, dt_pred = model(x.to(DEVICE))
                 ddg = ddg.to(DEVICE)
                 dt = dt.to(DEVICE)
                 loss = None
@@ -398,6 +429,8 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
                 optim.step()
                 if scheduler is not None:
                     scheduler.step()
+
+                #break
 
             train_loss=np.mean(train_loss)
             eval_loss, eval_ddg_loss, eval_dt_loss = evaluate(model, dl_val, params)[:3]
@@ -445,14 +478,17 @@ def run_train(name, params, project='thermonetv2'):
             tqdm(kfold.split(df_train, groups=groups), total=N_FOLDS, desc="Folds")):
         exp_name = f'{name}-{fold}'
         fname = f'{MODELS_PATH}/{exp_name}.pt'
-        ds_train = ThermoNet2Dataset(df_train.loc[train_idx])
-        ds_val = ThermoNet2Dataset(df_train.loc[val_idx])
+        # ds_train = ThermoNet2Dataset(df_train.loc[train_idx])
+        # ds_val = ThermoNet2Dataset(df_train.loc[val_idx])
+
+        ds_train = e3nnDataset(df_train.loc[train_idx])
+        ds_val = e3nnDataset(df_train.loc[val_idx])
 
         batch_size = params['batch_size']
 
         logger=CSVLogger(['Epoch','Train Loss', 'Val MSE','ddg loss','dT loss'],f'logs/{fold}.csv')
-        dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True, pin_memory=True, drop_last=True)
-        dl_val = DataLoader(ds_val, batch_size=64, pin_memory=True, drop_last=True)
+        dl_train=DataLoader(ds_train, batch_size=batch_size,collate_fn=GraphCollate(),num_workers=32,pin_memory=True,shuffle=True)
+        dl_val=DataLoader(ds_val, batch_size=batch_size,collate_fn=GraphCollate(),num_workers=32,pin_memory=True,shuffle=False)
 
         model, losses = train_model(exp_name, dl_train, dl_val, params, logger=logger, wandb_enabled=False, project=project)
 
@@ -598,11 +634,19 @@ if WANDB_SWEEP:
                 # --------------- train --------------
                 kfold = GroupKFold(5)
                 for train_idx, val_idx in kfold.split(df_train, groups=df_train.sequence):
-                    ds_train = ThermoNet2Dataset(df_train.loc[train_idx])
-                    ds_val = ThermoNet2Dataset(df_train.loc[val_idx])
+                    #ds_train = ThermoNet2Dataset(df_train.loc[train_idx])
+                    #ds_val = ThermoNet2Dataset(df_train.loc[val_idx])
+
+                    ds_train = e3nnDataset(df_train.loc[train_idx])
+                    ds_val = e3nnDataset(df_train.loc[val_idx])
+
+                    #dl = DataLoader(ds, batch_size=BEST_PARAMS['batch_size'],collate_fn=GraphCollate(),num_workers=32)
+
                     batch_size = params['batch_size']
-                    dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True, pin_memory=True)
-                    dl_val = DataLoader(ds_val, batch_size=512, pin_memory=True, shuffle=True)
+                    #dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True, pin_memory=True)
+                    dl_train=DataLoader(ds_train, batch_size=batch_size,collate_fn=GraphCollate(),num_workers=32,pin_memory=True,shuffle=True)
+                    dl_val=DataLoader(ds_val, batch_size=batch_size,collate_fn=GraphCollate(),num_workers=32,pin_memory=True,shuffle=False)
+                    #dl_val = DataLoader(ds_val, batch_size=512, pin_memory=True, shuffle=True)
                     _, losses = train_model(0, dl_train, dl_val, params, wandb_enabled=False)
                     for epoch in range(len(losses['ddg_loss'])):
                         run.log({
