@@ -106,9 +106,9 @@ PUBLIC_SUBMISSIONS=[
 TRAIN_FEATURES_DIR = '../input/14656-unique-mutations-voxel-features-pdbs/features'
 
 
-test=np.load(TEST_FEATURES_PATH)
-
-exit()
+# test=np.load(TEST_FEATURES_PATH)
+#
+# exit()
 # except Exception as ex:
 #     print('Running locally')
 #     WILDTYPE_PDB = 'nesp/thermonet/wildtypeA.pdb'
@@ -444,6 +444,8 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
                 min_loss = eval_loss
                 min_epoch = epoch
                 best_model = copy.deepcopy(model)
+                fname = f'{MODELS_PATH}/{name}.pt'
+                torch.save(model.state_dict(), fname)
             prog.set_description(
                 f'Epoch: {epoch}; Train Loss: {train_loss:.02f} Val MSE:{eval_loss:.02f}; Min Val MSE:{min_loss:.02f}; ddg loss:{eval_ddg_loss:.02f}; dT loss:{eval_dt_loss:.02f}')
             logger.log([epoch,train_loss,eval_loss,eval_ddg_loss,eval_dt_loss])

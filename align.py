@@ -63,6 +63,8 @@ for sample_chain in sample_model:
 # Now we initiate the superimposer:
 super_imposer = Bio.PDB.Superimposer()
 super_imposer.set_atoms(ref_atoms, sample_atoms)
+print(super_imposer.rms)
+
 super_imposer.apply(sample_model.get_atoms())
 
 # Print RMSD:

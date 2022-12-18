@@ -71,21 +71,21 @@ class e3nnNetwork(nn.Module):
         model_kwargs = {
             "irreps_in": "5x 0e",
             "irreps_hidden": [(mul, (l, p)) for l, mul in enumerate([10,3,2,1]) for p in [-1, 1]],
-            "irreps_out": "2x0e",
+            "irreps_out": "256x0e",
             "irreps_node_attr": None,
             "irreps_edge_attr": o3.Irreps.spherical_harmonics(3),
-            "layers": 3,
-            "max_radius": 10,
+            "layers": 1,
+            "max_radius": 20,
             "number_of_basis": 10,
             "radial_layers": 1,
             "radial_neurons": 128,
-            "num_neighbors": 12.2298,
-            "num_nodes": 24,
+            "num_neighbors": 32,
+            "num_nodes": 100,
             "reduce_output": False,
         }
 
         self.model = Network(**model_kwargs)
-
+        self.linear = nn.Linear(256,2)
 
     # def forward(self,input):
     #     wt_input={"pos":input['wt_pos'],
@@ -133,15 +133,18 @@ class e3nnNetwork(nn.Module):
         # print(input['batch'].shape)
         # exit()
         y=self.model(input)
+        #y=self.linear(y)
         max_index=int(input['batch'].max().item())
 
         output=[]
         for batch_index in range(max_index+1):
-            sample=y[input['batch']==batch_index].mean(0)
+            sample=y[(input['batch']==batch_index)*(input['x'][:,-1]==1)].mean(0)
+            sample=sample-y[(input['batch']==batch_index)*(input['x'][:,-1]==0)].mean(0)
+            #sample=y[input['batch']==batch_index].mean(0)
             output.append(sample)
 
         output=torch.stack(output,0)
-
+        output=self.linear(output)
         #print(output.shape)
 
         dt_output=output[:,0]
