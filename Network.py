@@ -69,7 +69,7 @@ class e3nnNetwork(nn.Module):
         super().__init__()
 
         model_kwargs = {
-            "irreps_in": "5x 0e",
+            "irreps_in": "25x 0e",
             "irreps_hidden": [(mul, (l, p)) for l, mul in enumerate([10,3,2,1]) for p in [-1, 1]],
             "irreps_out": "256x0e",
             "irreps_node_attr": None,
@@ -83,6 +83,22 @@ class e3nnNetwork(nn.Module):
             "num_nodes": 100,
             "reduce_output": False,
         }
+
+        # model_kwargs = {
+        #     "irreps_in": "25x 0e",
+        #     "irreps_hidden": [(mul, (l, p)) for l, mul in enumerate([20,6,4,2]) for p in [-1, 1]],
+        #     "irreps_out": "256x0e",
+        #     "irreps_node_attr": None,
+        #     "irreps_edge_attr": o3.Irreps.spherical_harmonics(3),
+        #     "layers": 1,
+        #     "max_radius": 20,
+        #     "number_of_basis": 10,
+        #     "radial_layers": 1,
+        #     "radial_neurons": 128,
+        #     "num_neighbors": 32,
+        #     "num_nodes": 100,
+        #     "reduce_output": False,
+        # }
 
         self.model = Network(**model_kwargs)
         self.linear = nn.Linear(256,2)

@@ -38,8 +38,23 @@ class e3nnDataset(Dataset):
 
         """
         pdb=PandasPdb().read_pdb(pdf_path)
+
+        # try:
+        #     channels=np.load(pdf_path[:-3]+'channels.npy')
+        #
+        #     if len(channels)>len(pdb.df['ATOM']):
+        #         channels=channels[:len(pdb.df['ATOM'])]
+        #     elif len(channels)<len(pdb.df['ATOM']):
+        #         channels=np.pad(channels,((0,len(pdb.df['ATOM'])-len(channels)),(0,0)))
+        # except:
+        #     channels=np.zeros((len(pdb.df['ATOM']),8))
+
+        #channels=channels[pdb.df['ATOM']['element_symbol']!='H']
         pdb = pdb.df['ATOM'][pdb.df['ATOM']['element_symbol']!='H']
 
+
+        # print(channels.shape)
+        # exit()
         # print(pdb['residue_name'])
         # exit()
         #find atoms within radius
@@ -49,11 +64,14 @@ class e3nnDataset(Dataset):
         pos_z=pdb['z_coord'].values
         pos=np.stack([pos_x,pos_y,pos_z],1)
 
-        mutant_pos=pos[pdb['residue_number']==mutant_position]
+        mutant_pos=pos[(pdb['residue_number']==mutant_position)*(pdb['element_symbol']=='C')]
 
         center=np.mean(mutant_pos,0)
         distance=((pos-center)**2).sum(-1)**0.5
         pdb=pdb[distance<keep_radius]
+
+        #channels=channels[distance<keep_radius]
+
 
         #get features from atoms within radius
         pos=pdb[['x_coord','y_coord','z_coord']]
@@ -64,7 +82,11 @@ class e3nnDataset(Dataset):
 
         #aa_types=self.aa_types[aa]
 
-        x=np.array([[*self.atom_types[a],if_mutant] for a,aa in zip(pdb['element_symbol'],pdb['residue_name'])])
+        #x=np.array([[*self.atom_types[a],*self.aa_types[aa],*list(c),if_mutant] for a,c,aa in zip(pdb['element_symbol'],channels,pdb['residue_name'])])
+        x=np.array([[*self.atom_types[a],*self.aa_types[aa],if_mutant] for a,aa in zip(pdb['element_symbol'],pdb['residue_name'])])
+        # print(x)
+        # exit()
+
         batch=np.zeros(len(pdb))*index
         batch[pdb['residue_number']==mutant_position]=index
 
@@ -96,7 +118,7 @@ class e3nnDataset(Dataset):
         mt_pos,mt_x,mt_batch,mt_center=self.get_features(mt_pdf_path,1,if_mutant=1,mutant_position=position)
 
         #mt_pos=mt_pos-mt_center+wt_center
-        #mt_pos=mt_pos+20
+        mt_pos=mt_pos-mt_center+wt_center+40
 
         ddg, ddt = torch.tensor(r.ddG, dtype=torch.float), torch.tensor(r.dT, dtype=torch.float)
 
@@ -142,7 +164,7 @@ class e3nnDataset_test(e3nnDataset):
             mt_pdf_path=f'../input/novozymes-enzyme-stability-prediction/wildtype_structure_prediction_af2.pdb'
         mt_pos,mt_x,mt_batch,mt_center=self.get_features(mt_pdf_path,1,if_mutant=1,mutant_position=position)
 
-        mt_pos=mt_pos-mt_center+wt_center
+        mt_pos=mt_pos-mt_center+wt_center+40
         #mt_pos=mt_pos+20
 
         #ddg, ddt = torch.tensor(r.ddG, dtype=torch.float), torch.tensor(r.dT, dtype=torch.float)
