@@ -12,7 +12,7 @@ class e3nnDataset(Dataset):
                            'C':[0,1,0,0],
                            'O':[0,0,1,0],
                            'S':[0,0,0,1]}
-        aa_df=pd.read_csv("/home/exx/Documents/RNAplay/data/RNA_codons.csv")
+        aa_df=pd.read_csv("../input/RNA_codons.csv")
         aa_types=aa_df['AminoAcid'].unique()
 
         self.aa_types={}
@@ -98,39 +98,44 @@ class e3nnDataset(Dataset):
 
 
     def __getitem__(self, item):
-        r = self.df.iloc[item]
-        pdb_name=r['PDB_chain']
-        wildtype=r['wildtype']
-        position=r['pdb_position']
-        mutant=r['mutant']
 
-        # r = self.df.iloc[item]
-        # if 'ddG' in self.df.columns:
-        #     return torch.as_tensor(r.features, dtype=torch.float), torch.tensor(r.ddG, dtype=torch.float), torch.tensor(r.dT, dtype=torch.float)
-        # else:
-        #     return torch.as_tensor(r.features, dtype=torch.float)
+        if self.features is not None:
+            return self.features[item]
+        else:
 
-        wt_pdf_path=f'../input/14656-unique-mutations-voxel-features-pdbs/pdbs/{pdb_name}/{pdb_name}_relaxed.pdb'
-        wt_pos,wt_x,wt_batch,wt_center=self.get_features(wt_pdf_path,1,if_mutant=0,mutant_position=position)
+            r = self.df.iloc[item]
+            pdb_name=r['PDB_chain']
+            wildtype=r['wildtype']
+            position=r['pdb_position']
+            mutant=r['mutant']
 
+            # r = self.df.iloc[item]
+            # if 'ddG' in self.df.columns:
+            #     return torch.as_tensor(r.features, dtype=torch.float), torch.tensor(r.ddG, dtype=torch.float), torch.tensor(r.dT, dtype=torch.float)
+            # else:
+            #     return torch.as_tensor(r.features, dtype=torch.float)
 
-        mt_pdf_path=f'../input/14656-unique-mutations-voxel-features-pdbs/pdbs/{pdb_name}/{pdb_name}_{wildtype}{position}{mutant}_relaxed.pdb'
-        mt_pos,mt_x,mt_batch,mt_center=self.get_features(mt_pdf_path,1,if_mutant=1,mutant_position=position)
-
-        #mt_pos=mt_pos-mt_center+wt_center
-        mt_pos=mt_pos-mt_center+wt_center+40
-
-        ddg, ddt = torch.tensor(r.ddG, dtype=torch.float), torch.tensor(r.dT, dtype=torch.float)
+            wt_pdf_path=f'../input/14656-unique-mutations-voxel-features-pdbs/pdbs/{pdb_name}/{pdb_name}_relaxed.pdb'
+            wt_pos,wt_x,wt_batch,wt_center=self.get_features(wt_pdf_path,1,if_mutant=0,mutant_position=position)
 
 
-        return {'wt_pos':wt_pos,
-                'wt_x':wt_x,
-                'wt_batch':wt_batch,
-                'mt_pos':mt_pos,
-                'mt_x':mt_x,
-                'mt_batch':mt_batch,
-                "ddg":ddg,
-                "ddt":ddt}
+            mt_pdf_path=f'../input/14656-unique-mutations-voxel-features-pdbs/pdbs/{pdb_name}/{pdb_name}_{wildtype}{position}{mutant}_relaxed.pdb'
+            mt_pos,mt_x,mt_batch,mt_center=self.get_features(mt_pdf_path,1,if_mutant=1,mutant_position=position)
+
+            #mt_pos=mt_pos-mt_center+wt_center
+            mt_pos=mt_pos-mt_center+wt_center+40
+
+            ddg, ddt = torch.tensor(r.ddG, dtype=torch.float), torch.tensor(r.dT, dtype=torch.float)
+
+
+            return {'wt_pos':wt_pos,
+                    'wt_x':wt_x,
+                    'wt_batch':wt_batch,
+                    'mt_pos':mt_pos,
+                    'mt_x':mt_x,
+                    'mt_batch':mt_batch,
+                    "ddg":ddg,
+                    "ddt":ddt}
 
     def __len__(self):
         return len(self.df) #if self.df is not None else len(self.features)

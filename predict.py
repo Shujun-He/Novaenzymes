@@ -8,7 +8,7 @@ from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
 import torch
 
-init_notebook_mode(connected=True)
+#init_notebook_mode(connected=True)
 import glob
 from scipy.stats import spearmanr
 from pprint import pprint
@@ -250,7 +250,7 @@ test_dataset=e3nnDataset_test(df_test[df_test.op == 'replace'])
 test_loader = DataLoader(test_dataset, batch_size=32,collate_fn=GraphCollate(test=True),num_workers=32)
 
 models=[]
-for i in range(10):
+for i in range(8):
     model=e3nnNetwork().double()
     model.eval()
     model.load_state_dict(torch.load(f'models/thermonetv2-7633-v2-{i}.pt'))

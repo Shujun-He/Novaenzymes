@@ -8,7 +8,7 @@ from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
 import torch
 
-init_notebook_mode(connected=True)
+#init_notebook_mode(connected=True)
 import glob
 from scipy.stats import spearmanr
 from pprint import pprint
@@ -42,7 +42,7 @@ def get_args():
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--nfolds', type=int, default=10, help='number of cross validation folds')
     parser.add_argument('--fold', type=int, default=0, help='which fold to train')
-    parser.add_argument('--workers', type=int, default=16, help='number of workers for dataloader')
+    parser.add_argument('--workers', type=int, default=8, help='number of workers for dataloader')
     parser.add_argument('--nlayers', type=int, default=1, help='nlayers')
     opts = parser.parse_args()
     return opts
@@ -128,6 +128,8 @@ PUBLIC_SUBMISSIONS=[
     '../input/novo-esp-eli5-performant-approaches-lb-0-451/submission.csv',  # 0.451
     '../input/nesp-alphafold-getarea-exploration/submission.csv',                   # 0.407
 ]
+
+
 TRAIN_FEATURES_DIR = '../input/14656-unique-mutations-voxel-features-pdbs/features'
 
 
@@ -186,6 +188,12 @@ df_train = load_data()
 df_train
 
 
+import pickle
+try:
+    with open('features.p','rb') as f:
+        features=pickle.load(f)
+except:
+    features=None
 
 
 
@@ -355,8 +363,8 @@ def run_train(name, params, project='thermonetv2'):
         # ds_train = ThermoNet2Dataset(df_train.loc[train_idx])
         # ds_val = ThermoNet2Dataset(df_train.loc[val_idx])
 
-        ds_train = e3nnDataset(df_train.loc[train_idx])
-        ds_val = e3nnDataset(df_train.loc[val_idx])
+        ds_train = e3nnDataset(df_train.loc[train_idx],[features[i] for i in train_idx])
+        ds_val = e3nnDataset(df_train.loc[val_idx],[features[i] for i in val_idx])
 
         batch_size = params['batch_size']
 
