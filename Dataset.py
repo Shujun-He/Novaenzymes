@@ -28,7 +28,7 @@ class e3nnDataset(Dataset):
         # exit()
 
 
-    def get_features(self,pdf_path,index,if_mutant,mutant_position=None,keep_radius=15):
+    def get_features(self,pdf_path,index,if_mutant,mutant_position=None,keep_radius=8):
         """
         Need:
         ``pos`` the position of the nodes (atoms)
@@ -87,8 +87,8 @@ class e3nnDataset(Dataset):
         # print(x)
         # exit()
 
-        batch=np.zeros(len(pdb))*index
-        batch[pdb['residue_number']==mutant_position]=index
+        batch=np.ones(len(pdb))*index
+        #batch[pdb['residue_number']==mutant_position]=index
 
         pos, x, batch, center=torch.tensor(pos),torch.tensor(x),torch.tensor(batch), torch.tensor(center)
 

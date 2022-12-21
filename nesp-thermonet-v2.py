@@ -61,13 +61,15 @@ WANDB_SWEEP_PROJECT = 'ThermoNetV2-sweep'
 
 SUBMISSION = True
 
+NUM_WORKERS=16
+
 
 DEFAULT_PARAMS = {
     'SiLU': False,
     'diff_features': True,
     'LayerNorm': False,
     'GroupKFold': False,  # only use for hyperopt
-    'epochs': 15,
+    'epochs': 35,
     'AdamW': False,
 }
 
@@ -75,11 +77,11 @@ DEFAULT_PARAMS = {
 
 
 
-BEST_PARAMS = {**DEFAULT_PARAMS, **{'AdamW': True,
+BEST_PARAMS = {**DEFAULT_PARAMS, **{'AdamW': False,
  'C_dt_loss': 0.01,
  'OneCycleLR': False,
- 'batch_size': 16,
- 'AdamW_decay': 1.3994535042337082,
+ 'batch_size': 64,
+ 'AdamW_decay': 0,
  'dropout_rate': 0.06297340526648805,
  'learning_rate': 1e-2,
  'conv_layer_num': 5,
@@ -355,8 +357,8 @@ def load_pytorch_model(fname, params=BEST_PARAMS):
 
 def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, project='thermonetv2'):
     #model = ThermoNet2(params).to(DEVICE)
-
     model = e3nnNetwork().to(DEVICE).double()
+    #model = PointNet().to(DEVICE)#.double()
     # if params['AdamW']:
     #     def get_optimizer_params(model, encoder_lr, weight_decay=0.0):
     #         no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
@@ -443,8 +445,8 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
             if run is not None:
                 run.log({'val_loss': eval_loss, 'val_ddg_loss': eval_ddg_loss, 'val_dt_loss': eval_dt_loss,
                          'lr': scheduler.get_last_lr()[0] if scheduler is not None else params['learning_rate']})
-            if eval_loss < min_loss:
-                min_loss = eval_loss
+            if eval_ddg_loss < min_loss:
+                min_loss = eval_ddg_loss
                 min_epoch = epoch
                 best_model = copy.deepcopy(model)
                 fname = f'{MODELS_PATH}/{name}.pt'
@@ -497,8 +499,8 @@ def run_train(name, params, project='thermonetv2'):
         batch_size = params['batch_size']
 
         logger=CSVLogger(['Epoch','Train Loss', 'Val MSE','ddg loss','dT loss'],f'logs/{fold}.csv')
-        dl_train=DataLoader(ds_train, batch_size=batch_size,collate_fn=GraphCollate(),num_workers=16,pin_memory=True,shuffle=True)
-        dl_val=DataLoader(ds_val, batch_size=batch_size,collate_fn=GraphCollate(),num_workers=16,pin_memory=True,shuffle=False)
+        dl_train=DataLoader(ds_train, batch_size=batch_size,collate_fn=GraphCollate(),num_workers=NUM_WORKERS,pin_memory=True,shuffle=True)
+        dl_val=DataLoader(ds_val, batch_size=batch_size,collate_fn=GraphCollate(),num_workers=NUM_WORKERS,pin_memory=True,shuffle=False)
 
         model, losses = train_model(exp_name, dl_train, dl_val, params, logger=logger, wandb_enabled=False, project=project)
 

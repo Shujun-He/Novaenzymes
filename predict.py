@@ -253,7 +253,7 @@ models=[]
 for i in range(10):
     model=e3nnNetwork().double()
     model.eval()
-    model.load_state_dict(torch.load(f'models/fold{i}.pt'))
+    model.load_state_dict(torch.load(f'models/thermonetv2-7633-v2-{i}.pt'))
     model=model.to(DEVICE)
     models.append(model)
 
