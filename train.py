@@ -44,6 +44,8 @@ def get_args():
     parser.add_argument('--fold', type=int, default=0, help='which fold to train')
     parser.add_argument('--workers', type=int, default=8, help='number of workers for dataloader')
     parser.add_argument('--nlayers', type=int, default=1, help='nlayers')
+    parser.add_argument('--models_path', type=str, default='models',  help='path to save models')
+    parser.add_argument('--destabilizing_mutations_only', action='store_true', help='use destablizing mutations only or not')
     opts = parser.parse_args()
     return opts
 
@@ -53,14 +55,8 @@ args=get_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
 
-MULTIPROCESSING = False
-BOXSIZE = 16
-VOXELSIZE = 1
-N_FOLDS = 10
-MODELS_PATH = 'models'
 DEBUG = True
 DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-DESTABILIZING_MUTATIONS_ONLY = True
 AUGMENT_DESTABILIZING_MUTATIONS = False
 EARLY_STOPPING_PATIENCE = 30
 IS_DDG_TARGET = True
@@ -68,20 +64,8 @@ WITH_PUCCI_SOURCE = True
 WITH_KAGGLE_DDG_SOURCE = True
 
 # switchers
-TRAIN = True
 WANDB_TRAIN_PROJECT = 'ThermoNetV2-train'
 WANDB_TRAIN_NAME = 'thermonetv2-7633-v2'
-
-OPTUNA = False
-OPTUNA_WANDB_PROJECT = "ThermoNetV2-Optuna"
-OPTUNA_TRIALS = 400
-
-WANDB_SWEEP = False
-WANDB_SWEEP_PROJECT = 'ThermoNetV2-sweep'
-
-SUBMISSION = True
-
-NUM_WORKERS=16
 
 
 DEFAULT_PARAMS = {
@@ -110,24 +94,6 @@ BEST_PARAMS = {**DEFAULT_PARAMS, **{'AdamW': False,
 
 
 
-#try:
-#from kaggle_secrets import UserSecretsClient
-#user_secrets = UserSecretsClient()
-#WANDB_API_KEY = user_secrets.get_secret("WANDB_API_KEY")
-
-print('Running in Kaggle')
-WILDTYPE_PDB = '../input/novozymes-enzyme-stability-prediction/wildtype_structure_prediction_af2.pdb'
-PDB_PATH = '../input/thermonet-wildtype-relaxed'
-TRAIN_FEATURES_PATH = '../input/thermonet-features/Q3214.npy'
-TRAIN_TARGETS_PATH = ''
-TEST_CSV = '../input/novozymes-enzyme-stability-prediction/test.csv'
-TEST_FEATURES_PATH = '../input/thermonet-features/nesp_features.npy'
-PUBLIC_SUBMISSIONS=[
-    '../input/rmsd-from-molecular-dynamics/submission_rmsd.csv',     # LB: 0.507
-    '../input/plldt-ddg-demask-sasa/deepddg-ddg.csv',                # LB: 0.451
-    '../input/novo-esp-eli5-performant-approaches-lb-0-451/submission.csv',  # 0.451
-    '../input/nesp-alphafold-getarea-exploration/submission.csv',                   # 0.407
-]
 
 
 TRAIN_FEATURES_DIR = '../input/14656-unique-mutations-voxel-features-pdbs/features'
@@ -135,7 +101,7 @@ TRAIN_FEATURES_DIR = '../input/14656-unique-mutations-voxel-features-pdbs/featur
 
 
 
-os.makedirs(MODELS_PATH, exist_ok=True)
+os.makedirs(args.models_path, exist_ok=True)
 
 
 
@@ -169,7 +135,7 @@ def load_data():
 
     df_train = df
 
-    if DESTABILIZING_MUTATIONS_ONLY:
+    if args.destabilizing_mutations_only:
         print('Keeping destabilizing mutations only')
         df_train = df_train[((df_train.ddG < 0))  & ((df_train.dT < 0) | df_train.dT.isna())].reset_index(drop=True).copy() # best for ddG
     elif AUGMENT_DESTABILIZING_MUTATIONS:
@@ -319,8 +285,8 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
                 min_loss = eval_ddg_loss
                 min_epoch = epoch
                 best_model = copy.deepcopy(model)
-                fname = f'{MODELS_PATH}/{name}.pt'
-                torch.save(model.state_dict(), fname)
+                fname = f'{args.models_path}/{name}.pt'
+                torch.save(model.state_dict(),f'models/fold{args.fold}.pt')
             prog.set_description(
                 f'Epoch: {epoch}; Train Loss: {train_loss:.02f} Val MSE:{eval_loss:.02f}; Min Val MSE:{min_loss:.02f}; ddg loss:{eval_ddg_loss:.02f}; dT loss:{eval_dt_loss:.02f}')
             logger.log([epoch,train_loss,eval_loss,eval_ddg_loss,eval_dt_loss])
@@ -330,7 +296,7 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
 
     if run is not None:
         #art = wandb.Artifact("thermonet2", type="model")
-        fname = f'{MODELS_PATH}/{name}.pt'
+        fname = f'{args.models_path}/{name}.pt'
         torch.save(model.state_dict(), fname)
         art.add_file(fname)
         run.log_artifact(art)
@@ -339,7 +305,7 @@ def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, pro
 
 
 def run_train(name, params, project='thermonetv2'):
-    os.makedirs(MODELS_PATH, exist_ok=True)
+    os.makedirs(args.models_path, exist_ok=True)
     os.makedirs('logs', exist_ok=True)
 
 
@@ -359,9 +325,10 @@ def run_train(name, params, project='thermonetv2'):
 
     for fold, train_idx, val_idx in tqdm([split[args.fold]], total=1, desc="Folds"):
         exp_name = f'{name}-{fold}'
-        fname = f'{MODELS_PATH}/{exp_name}.pt'
+        fname = f'{args.models_path}/{exp_name}.pt'
         # ds_train = ThermoNet2Dataset(df_train.loc[train_idx])
         # ds_val = ThermoNet2Dataset(df_train.loc[val_idx])
+
 
         ds_train = e3nnDataset(df_train.loc[train_idx],[features[i] for i in train_idx])
         ds_val = e3nnDataset(df_train.loc[val_idx],[features[i] for i in val_idx])
@@ -374,7 +341,7 @@ def run_train(name, params, project='thermonetv2'):
 
         model, losses = train_model(exp_name, dl_train, dl_val, params, logger=logger, wandb_enabled=False, project=project)
 
-        torch.save(model.state_dict(),f'models/fold{fold}.pt')
+        #torch.save(model.state_dict(),f'models/fold{fold}.pt')
         val_losses.append(losses)
         thermonet_models.append(model)
 
@@ -384,117 +351,5 @@ def run_train(name, params, project='thermonetv2'):
     return thermonet_models, d
 
 
-if TRAIN:
-    params = copy.copy(BEST_PARAMS)
-    thermonet_models = run_train(WANDB_TRAIN_NAME, params, project=WANDB_TRAIN_PROJECT)[0]
-
-
-
-
-def gen_mutations(name, df,
-                  wild="VPVNPEPDATSVENVALKTGSGDSQSDPIKADLEVKGQSALPFDVDCWAILCKGAPNVLQ""RVNEKTKNSNRDRSGANKGPFKDPQKWGIKALPPKNPSWSAQDFKSPEEYAFASSLQGGT""NAILAPVNLASQNSQGGVLNGFYSANKVAQFDPSKPQQTKGTWFQITKFTGAAGPYCKAL""GSNDKSVCDKNKNIAGDWGFDPAKWAYQYDEKNNKFNYVGK"):
-    result = []
-    for _, r in df.iterrows():
-        ops = Levenshtein.editops(wild, r.protein_sequence)
-        assert len(ops) <= 1
-        if len(ops) > 0 and ops[0][0] == 'replace':
-            idx = ops[0][1]
-            result.append([ops[0][0], idx + 1, wild[idx], r.protein_sequence[idx]])
-        elif len(ops) == 0:
-            result.append(['same', 0, '', ''])
-        elif ops[0][0] == 'insert':
-            assert False, "Ups"
-        elif ops[0][0] == 'delete':
-            idx = ops[0][1]
-            result.append(['delete', idx + 1, wild[idx], '-'])
-        else:
-            assert False, "Ups"
-
-    df = pd.concat([df, pd.DataFrame(data=result, columns=['op', 'idx', 'wild', 'mutant'])], axis=1)
-    df['mut'] = df[['wild', 'idx', 'mutant']].astype(str).apply(lambda v: ''.join(v), axis=1)
-    df['name'] = name
-    return df
-
-if SUBMISSION:
-    df_test = gen_mutations('wildtypeA', pd.read_csv(TEST_CSV))
-    #display(df_test)
-
-
-# In[118]:
-
-
-def predict(model:ThermoNet2, test_features):
-    with torch.no_grad():
-        model.eval()
-        dl = DataLoader(ThermoNet2Dataset(features=test_features), batch_size=64)
-        if IS_DDG_TARGET:
-            return np.concatenate(
-                [model.forward(x.to(DEVICE))[0].cpu().numpy() for x in tqdm(dl, desc='ThermoNet2 ddg predict', disable=True)])
-        else:
-            return np.concatenate(
-                [model.forward(x.to(DEVICE))[1].cpu().numpy() for x in tqdm(dl, desc='ThermoNet2 dt predict', disable=True)])
-
-
-# In[121]:
-
-
-if SUBMISSION:
-    #thermonet_models = [load_pytorch_model(f) for f in tqdm(glob.glob(f'artifacts/*/{WANDB_TRAIN_NAME}*.pt'), desc=f'Loading models {WANDB_TRAIN_NAME}')]
-
-    test_features = np.load(TEST_FEATURES_PATH)
-    test_ddg = np.stack([predict(model, test_features) for model in tqdm(thermonet_models, desc='Fold prediction')])
-    test_ddg = np.mean(test_ddg, axis=0).flatten()
-
-    # replacement mutations
-    df_test.loc[df_test.op == 'replace', 'ddg'] = test_ddg
-    # deletion mutations
-    df_test.loc[df_test['op'] == "delete", 'ddg'] = df_test[df_test["op"]=="replace"]["ddg"].quantile(q=0.25)
-    # no mutations
-    df_test.loc[df_test['op'] == "same", 'ddg'] = 0.
-
-    df_test.rename(columns={'ddg': 'tm'})[['seq_id', 'tm']].to_csv('submission.csv', index=False)
-    #get_ipython().system('head submission.csv')
-
-
-# # Ensemble
-#
-# Ensembling ThermoNetV2 with top public solutions
-
-# In[123]:
-
-
-if SUBMISSION:
-
-    def ranked(f):
-        return rankdata(pd.read_csv(f).tm)
-
-    pred = 0.7 * ranked('../input/rmsd-from-molecular-dynamics/submission_rmsd.csv')+\
-        0.3 * (ranked('../input/plldt-ddg-demask-sasa/deepddg-ddg.csv')+        \
-        ranked('../input/novo-esp-eli5-performant-approaches-lb-0-451/submission.csv')+ \
-        ranked('../input/nesp-alphafold-getarea-exploration/submission.csv') + \
-        ranked('submission.csv'))
-
-
-    df = pd.read_csv('../input/novozymes-enzyme-stability-prediction/sample_submission.csv')
-    df.tm = pred
-
-
-    # equally weighted ensemble with https://www.kaggle.com/code/shlomoron/nesp-relaxed-rosetta-scores
-    df.tm = rankdata(df.tm) + ranked('../input/nesp-relaxed-rosetta-scores/submission_rosetta_scores')
-
-
-    df.to_csv('ensemble_submission.csv', index=False)
-    #get_ipython().system('head ensemble_submission.csv')
-
-
-# In[ ]:
-
-
-#get_ipython().system('rm -rf wandb')
-
-
-#
-# <div class="alert alert-block alert-danger" style="text-align:center; font-size:20px;">
-#     ❤️ Dont forget to ▲upvote▲ if you find this notebook usefull!  ❤️
-# </div>
-#
+params = copy.copy(BEST_PARAMS)
+models = run_train(WANDB_TRAIN_NAME, params, project=WANDB_TRAIN_PROJECT)[0]
