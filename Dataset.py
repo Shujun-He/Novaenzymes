@@ -141,9 +141,9 @@ class e3nnDataset(Dataset):
         return len(self.df) #if self.df is not None else len(self.features)
 
 class e3nnDataset_test(e3nnDataset):
-    def __init__(self, df, features=None):
+    def __init__(self, df, use_alphafold_structures=True, features=None):
         super().__init__(df=df)
-
+        self.use_alphafold_structures=use_alphafold_structures
         print(self.df)
 
     def __getitem__(self, item):
@@ -163,10 +163,13 @@ class e3nnDataset_test(e3nnDataset):
         wt_pdf_path=f'../input/novozymes-enzyme-stability-prediction/wildtype_structure_prediction_af2.pdb'
         wt_pos,wt_x,wt_batch,wt_center=self.get_features(wt_pdf_path,1,if_mutant=0,mutant_position=position)
 
-
-        mt_pdf_path=f'../input/af_test_pdbs/{mutant}_unrelaxed_rank_1_model_3.pdb'
+        if self.use_alphafold_structures:
+            mt_pdf_path=f'../input/af_test_pdbs/{mutant}_unrelaxed_rank_1_model_3.pdb'
+        else:
+            mt_pdf_path=f'../input/wildtypeA/wildtypeA_{mutant}_relaxed.pdb'
         if mutant=='0':
             mt_pdf_path=f'../input/novozymes-enzyme-stability-prediction/wildtype_structure_prediction_af2.pdb'
+        #mt_pdf_path=f'../input/novozymes-enzyme-stability-prediction/wildtype_structure_prediction_af2.pdb'
         mt_pos,mt_x,mt_batch,mt_center=self.get_features(mt_pdf_path,1,if_mutant=1,mutant_position=position)
 
         mt_pos=mt_pos-mt_center+wt_center+40

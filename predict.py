@@ -1,9 +1,8 @@
-import multiprocessing
 import os
 
 import Levenshtein
 import numpy as np
-from plotly.offline import init_notebook_mode
+#from plotly.offline import init_notebook_mode
 from sklearn.model_selection import GroupKFold
 from tqdm import tqdm
 import torch
@@ -11,9 +10,8 @@ import torch
 #init_notebook_mode(connected=True)
 import glob
 from scipy.stats import spearmanr
-from pprint import pprint
 
-import plotly.express as px
+#import plotly.express as px
 import torch.nn as nn
 import pandas as pd
 from scipy.stats import rankdata
@@ -124,20 +122,6 @@ TRAIN_FEATURES_DIR = '../input/14656-unique-mutations-voxel-features-pdbs/featur
 os.makedirs(MODELS_PATH, exist_ok=True)
 
 
-# In[99]:
-
-
-# import wandb
-
-# """
-# Add WANDB_API_KEY with your wandb.ai API key to run the code.
-# """
-# wandb.login(key=WANDB_API_KEY)
-
-
-# # Load training data
-
-# In[100]:
 
 
 def load_data():
@@ -182,27 +166,6 @@ def load_data():
         df_train = pd.concat([df_pos, df_neg], axis=0).sample(frac=1.).reset_index(drop=True)
     return df_train
 
-#df_train = load_data()
-#df_train = pd.read_csv(f'{TRAIN_FEATURES_DIR}/dataset.csv')
-#df_train
-
-
-if DEBUG:
-    params = copy.copy(BEST_PARAMS)
-    params['diff_features'] = False
-    tn2 =ThermoNet2(params)
-    print([out.shape for out in tn2.forward(torch.randn((2, 14, 16, 16, 16)))])
-    print(tn2)
-
-
-# # Dataset
-
-# In[107]:
-
-
-#exit()
-
-
 
 
 
@@ -246,52 +209,59 @@ if SUBMISSION:
 
 
 
-test_dataset=e3nnDataset_test(df_test[df_test.op == 'replace'])
-test_loader = DataLoader(test_dataset, batch_size=32,collate_fn=GraphCollate(test=True),num_workers=32)
+
 
 models=[]
 for i in range(8):
     model=e3nnNetwork().double()
-    model.eval()
-    model.load_state_dict(torch.load(f'models/thermonetv2-7633-v2-{i}.pt'))
+    model.load_state_dict(torch.load(f'models/fold{i}.pt'))
     model=model.to(DEVICE)
+    model.eval()
     models.append(model)
 
+test_dataset=e3nnDataset_test(df_test[df_test.op == 'replace'])
+#test_dataset=e3nnDataset_test(df_test)
+test_loader = DataLoader(test_dataset, batch_size=16,collate_fn=GraphCollate(test=True),num_workers=0, pin_memory=True)
 
 preds=[]
+
+for batch in tqdm(test_loader):
+    #pass
+    for key in batch:
+        batch[key]=batch[key].cuda()
+    batch_preds=[]
+    for model in models:
+        with torch.no_grad():
+            ddg_pred, dt_pred = model(batch)
+            pass
+        batch_preds.append(ddg_pred)
+    batch_preds=torch.stack(batch_preds,0).mean(0)
+    preds.append(batch_preds.cpu())
+
+test_dataset=e3nnDataset_test(df_test[df_test.op == 'replace'],use_alphafold_structures=False)
+test_loader = DataLoader(test_dataset, batch_size=32,collate_fn=GraphCollate(test=True),num_workers=0)
+
+preds_rosetta=[]
 with torch.no_grad():
     for batch in tqdm(test_loader):
 
+        for key in batch:
+            batch[key]=batch[key].to(DEVICE)
         batch_preds=[]
+
         for model in models:
-            for key in batch:
-                batch[key]=batch[key].to(DEVICE)
             ddg_pred, dt_pred = model(batch)
             batch_preds.append(ddg_pred)
         batch_preds=torch.stack(batch_preds,0).mean(0)
-        preds.append(batch_preds.cpu())
+        preds_rosetta.append(batch_preds.cpu())
 
-test_ddg=torch.cat(preds).numpy()
+preds=torch.cat(preds)
+preds_rosetta=torch.cat(preds_rosetta)
 
-#exit()
-# exit()
-#
-# # In[118]:
-#
-#
-# def predict(model:ThermoNet2, test_features):
-#     with torch.no_grad():
-#         model.eval()
-#         dl = DataLoader(ThermoNet2Dataset(features=test_features), batch_size=64)
-#         if IS_DDG_TARGET:
-#             return np.concatenate(
-#                 [model.forward(x.to(DEVICE))[0].cpu().numpy() for x in tqdm(dl, desc='ThermoNet2 ddg predict', disable=True)])
-#         else:
-#             return np.concatenate(
-#                 [model.forward(x.to(DEVICE))[1].cpu().numpy() for x in tqdm(dl, desc='ThermoNet2 dt predict', disable=True)])
+preds=torch.stack([preds,preds_rosetta],0).mean(0)
 
+test_ddg=preds.numpy()
 
-# In[121]:
 
 
 if SUBMISSION:
@@ -342,16 +312,3 @@ if SUBMISSION:
 
     df.to_csv('ensemble_submission.csv', index=False)
     #get_ipython().system('head ensemble_submission.csv')
-
-
-# In[ ]:
-
-
-#get_ipython().system('rm -rf wandb')
-
-
-#
-# <div class="alert alert-block alert-danger" style="text-align:center; font-size:20px;">
-#     ❤️ Dont forget to ▲upvote▲ if you find this notebook usefull!  ❤️
-# </div>
-#
