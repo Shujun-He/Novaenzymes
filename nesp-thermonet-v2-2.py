@@ -29,8 +29,9 @@ from Logger import CSVLogger
 
 from Network import *
 from Dataset import *
+import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 
 MULTIPROCESSING = False
@@ -39,7 +40,7 @@ VOXELSIZE = 1
 N_FOLDS = 10
 MODELS_PATH = 'models'
 DEBUG = True
-DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+DEVICE = 'cuda:1' if torch.cuda.is_available() else 'cpu'
 DESTABILIZING_MUTATIONS_ONLY = True
 AUGMENT_DESTABILIZING_MUTATIONS = False
 EARLY_STOPPING_PATIENCE = 30
@@ -62,7 +63,6 @@ WANDB_SWEEP_PROJECT = 'ThermoNetV2-sweep'
 SUBMISSION = True
 
 NUM_WORKERS=16
-
 
 DEFAULT_PARAMS = {
     'SiLU': False,
@@ -245,7 +245,7 @@ class ThermoNet2Dataset(Dataset):
 
 #if DEBUG:
 ds = e3nnDataset(df_train)
-dl = DataLoader(ds, batch_size=BEST_PARAMS['batch_size'],collate_fn=GraphCollate(),num_workers=16)
+dl = DataLoader(ds, batch_size=BEST_PARAMS['batch_size'],collate_fn=GraphCollate(),num_workers=32)
 #feat, t1, t2 = next(iter(DataLoader(ds, batch_size=BEST_PARAMS['batch_size'])))
 #print(feat.shape, t1.shape, t2.shape)
 #print(ds[0])
@@ -357,8 +357,8 @@ def load_pytorch_model(fname, params=BEST_PARAMS):
 
 def train_model(name, dl_train, dl_val, params, logger, wandb_enabled=False, project='thermonetv2'):
     #model = ThermoNet2(params).to(DEVICE)
+
     model = e3nnNetwork().to(DEVICE).double()
-    #model = PointNet().to(DEVICE)#.double()
     # if params['AdamW']:
     #     def get_optimizer_params(model, encoder_lr, weight_decay=0.0):
     #         no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
@@ -482,12 +482,13 @@ def run_train(name, params, project='thermonetv2'):
     else:
         groups = range(len(df_train))
 
+
     split=[]
     for fold, (train_idx, val_idx) in enumerate(kfold.split(df_train, groups=groups)):
         split.append([fold, train_idx, val_idx])
 
 
-    for fold, train_idx, val_idx in tqdm(split[:5], total=5, desc="Folds"):
+    for fold, train_idx, val_idx in tqdm(split[5:10], total=5, desc="Folds"):
         exp_name = f'{name}-{fold}'
         fname = f'{MODELS_PATH}/{exp_name}.pt'
         # ds_train = ThermoNet2Dataset(df_train.loc[train_idx])
