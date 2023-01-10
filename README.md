@@ -11,7 +11,9 @@
 Use ```environment.yml``` to create the same environment I use
 
 
-# To run: ```train.sh```
+# Training
+
+To run: ```train.sh```
 
 I ran the training on a server with 8xA6000 so I ran 8 folds concurrently. You will want to change that based on how many GPUs you have.
 
